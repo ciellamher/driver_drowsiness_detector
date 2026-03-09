@@ -1,18 +1,15 @@
 import cv2
 import mediapipe as mp
 import math
-import pygame  # NEW: Import the audio library
+import pygame 
 
-# --- NEW: Initialize the audio mixer and load the sound ---
 pygame.mixer.init()
 try:
     alarm_sound = pygame.mixer.Sound('alarm.wav')
 except pygame.error:
-    print("WARNING: Could not find 'alarm.wav'. Make sure the file is in your project folder!")
+    print("WARNING: Could not find 'alarm.wav'.")
     alarm_sound = None
-# ----------------------------------------------------------
 
-# Initialize MediaPipe Face Mesh
 mp_face_mesh = mp.solutions.face_mesh
 
 RIGHT_EYE = [33, 160, 158, 133, 153, 144]
@@ -21,6 +18,7 @@ LEFT_EYE = [362, 385, 387, 263, 373, 380]
 EAR_THRESHOLD = 0.25      
 CONSECUTIVE_FRAMES = 20   
 frame_counter = 0         
+missing_face_counter = 0  
 
 def euclidean_distance(point1, point2):
     return math.sqrt((point1[0] - point2[0])**2 + (point1[1] - point2[1])**2)
@@ -52,8 +50,9 @@ with mp_face_mesh.FaceMesh(
         ih, iw, _ = image.shape
 
         if results.multi_face_landmarks:
+            missing_face_counter = 0 
+            
             for face_landmarks in results.multi_face_landmarks:
-                
                 right_eye_coords = []
                 for index in RIGHT_EYE:
                     x = int(face_landmarks.landmark[index].x * iw)
@@ -72,24 +71,35 @@ with mp_face_mesh.FaceMesh(
                 
                 cv2.putText(image, f"EAR: {avg_ear:.2f}", (30, 50), 
                             cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
+                
+                # NEW: Debug text to watch the frame counter
+                cv2.putText(image, f"Closed Frames: {frame_counter}", (30, 90), 
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 255), 2)
 
-                # --- AUDIO ALERT LOGIC ---
                 if avg_ear < EAR_THRESHOLD:
                     frame_counter += 1  
-                    
                     if frame_counter >= CONSECUTIVE_FRAMES:
                         cv2.putText(image, "DROWSINESS DETECTED!", (10, 300), 
                                     cv2.FONT_HERSHEY_SIMPLEX, 1.5, (0, 0, 255), 4)
-                        
-                        # NEW: Play the alarm if it isn't already playing
                         if alarm_sound and not pygame.mixer.get_busy():
                             alarm_sound.play()
                 else:
                     frame_counter = 0
-                    # NEW: Stop the alarm the moment the eyes open!
                     if alarm_sound and pygame.mixer.get_busy():
                         pygame.mixer.stop()
-                # -------------------------
+        else:
+            missing_face_counter += 1
+            
+            # NEW: Debug text to watch the missing face counter
+            cv2.putText(image, f"Missing Frames: {missing_face_counter}", (30, 90), 
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 165, 255), 2)
+            
+            # CHANGED: Lowered threshold to 10 so it reacts faster in the dark
+            if missing_face_counter >= 10:
+                cv2.putText(image, "NO DRIVER DETECTED!", (10, 300), 
+                            cv2.FONT_HERSHEY_SIMPLEX, 1.5, (0, 165, 255), 4)
+                if alarm_sound and not pygame.mixer.get_busy():
+                    alarm_sound.play()
 
         cv2.imshow('Driver Drowsiness Detector', image)
 
