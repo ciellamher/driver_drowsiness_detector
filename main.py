@@ -45,6 +45,13 @@ with mp_face_mesh.FaceMesh(
         if not success:
             break
 
+        # --- NEW DAY 8: LOW LIGHT ENHANCEMENT ---
+        # alpha controls Contrast (1.0 is normal, higher is more contrast)
+        # beta controls Brightness (0 is normal, higher is brighter)
+        # We are boosting both slightly to simulate better night vision!
+        image = cv2.convertScaleAbs(image, alpha=1.2, beta=30)
+        # ----------------------------------------
+
         image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
         results = face_mesh.process(image_rgb)
         ih, iw, _ = image.shape
@@ -72,7 +79,6 @@ with mp_face_mesh.FaceMesh(
                 cv2.putText(image, f"EAR: {avg_ear:.2f}", (30, 50), 
                             cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
                 
-                # NEW: Debug text to watch the frame counter
                 cv2.putText(image, f"Closed Frames: {frame_counter}", (30, 90), 
                             cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 255), 2)
 
@@ -90,11 +96,9 @@ with mp_face_mesh.FaceMesh(
         else:
             missing_face_counter += 1
             
-            # NEW: Debug text to watch the missing face counter
             cv2.putText(image, f"Missing Frames: {missing_face_counter}", (30, 90), 
                         cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 165, 255), 2)
             
-            # CHANGED: Lowered threshold to 10 so it reacts faster in the dark
             if missing_face_counter >= 10:
                 cv2.putText(image, "NO DRIVER DETECTED!", (10, 300), 
                             cv2.FONT_HERSHEY_SIMPLEX, 1.5, (0, 165, 255), 4)
