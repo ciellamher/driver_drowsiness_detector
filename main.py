@@ -6,7 +6,7 @@ import numpy as np
 import time
 from threading import Thread
 
-# --- NEW DAY 9: MULTI-THREADED CAMERA CLASS ---
+# --- MULTI-THREADED CAMERA CLASS ---
 class ThreadedCamera:
     def __init__(self, src=0):
         self.capture = cv2.VideoCapture(src)
@@ -14,12 +14,10 @@ class ThreadedCamera:
         self.stopped = False
 
     def start(self):
-        # Start the background thread
         Thread(target=self.update, args=(), daemon=True).start()
         return self
 
     def update(self):
-        # Constantly grab frames in the background
         while not self.stopped:
             self.success, self.frame = self.capture.read()
         self.capture.release()
@@ -29,7 +27,7 @@ class ThreadedCamera:
 
     def stop(self):
         self.stopped = True
-# ----------------------------------------------
+# -----------------------------------
 
 pygame.mixer.init()
 try:
@@ -44,10 +42,13 @@ RIGHT_EYE = [33, 160, 158, 133, 153, 144]
 LEFT_EYE = [362, 385, 387, 263, 373, 380]
 POSE_LANDMARKS = [1, 33, 263, 61, 291, 199] 
 
+# --- DAY 10 THRESHOLDS ---
 EAR_THRESHOLD = 0.25      
+PITCH_THRESHOLD = -10.0   # NEW: Triggers if head tilts down past this angle
 CONSECUTIVE_FRAMES = 20   
 frame_counter = 0         
 missing_face_counter = 0  
+# -------------------------
 
 def euclidean_distance(point1, point2):
     return math.sqrt((point1[0] - point2[0])**2 + (point1[1] - point2[1])**2)
@@ -58,9 +59,8 @@ def calculate_ear(eye_points):
     h = euclidean_distance(eye_points[0], eye_points[3])
     return (v1 + v2) / (2.0 * h)
 
-# --- START THE THREADED CAMERA ---
 cap = ThreadedCamera(0).start()
-prev_time = 0 # For calculating FPS
+prev_time = 0 
 
 with mp_face_mesh.FaceMesh(
     max_num_faces=1, 
@@ -68,14 +68,13 @@ with mp_face_mesh.FaceMesh(
     min_detection_confidence=0.5,
     min_tracking_confidence=0.5) as face_mesh:
 
-    print("Starting threaded camera... Press 'q' to quit.")
+    print("Starting dual-layer detection... Press 'q' to quit.")
 
     while True:
         success, image = cap.read()
         if not success:
             break
 
-        # FPS Calculation
         current_time = time.time()
         fps = 1 / (current_time - prev_time) if prev_time > 0 else 0
         prev_time = current_time
@@ -94,7 +93,6 @@ with mp_face_mesh.FaceMesh(
 
                 avg_ear = (calculate_ear(right_eye_coords) + calculate_ear(left_eye_coords)) / 2.0
                 
-                # Head Pose (Pitch)
                 face_2d = np.array([[int(face_landmarks.landmark[i].x * iw), int(face_landmarks.landmark[i].y * ih)] for i in POSE_LANDMARKS], dtype=np.float64)
                 face_3d = np.array([[int(face_landmarks.landmark[i].x * iw), int(face_landmarks.landmark[i].y * ih), face_landmarks.landmark[i].z] for i in POSE_LANDMARKS], dtype=np.float64)
                 
@@ -110,7 +108,9 @@ with mp_face_mesh.FaceMesh(
                 cv2.putText(image, f"EAR: {avg_ear:.2f}", (30, 50), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), 2)
                 cv2.putText(image, f"Pitch: {pitch:.2f}", (30, 90), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 0), 2)
 
-                if avg_ear < EAR_THRESHOLD:
+                # --- NEW DAY 10: DUAL-LAYER DROWSINESS LOGIC ---
+                # Check if eyes are closed OR head is dropped
+                if avg_ear < EAR_THRESHOLD or pitch < PITCH_THRESHOLD:
                     frame_counter += 1  
                     if frame_counter >= CONSECUTIVE_FRAMES:
                         cv2.putText(image, "DROWSINESS DETECTED!", (10, 300), cv2.FONT_HERSHEY_SIMPLEX, 1.5, (0, 0, 255), 4)
@@ -118,20 +118,18 @@ with mp_face_mesh.FaceMesh(
                 else:
                     frame_counter = 0
                     if alarm_sound and pygame.mixer.get_busy(): pygame.mixer.stop()
+                # -----------------------------------------------
         else:
             missing_face_counter += 1
             if missing_face_counter >= 10:
                 cv2.putText(image, "NO DRIVER DETECTED!", (10, 300), cv2.FONT_HERSHEY_SIMPLEX, 1.5, (0, 165, 255), 4)
                 if alarm_sound and not pygame.mixer.get_busy(): alarm_sound.play()
 
-        # Print FPS in the top right corner
         cv2.putText(image, f"FPS: {int(fps)}", (iw - 150, 50), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 165, 0), 2)
-
         cv2.imshow('Driver Drowsiness Detector', image)
 
         if cv2.waitKey(5) & 0xFF == ord('q'):
             break
 
-# Clean up safely
 cap.stop()
 cv2.destroyAllWindows()
